@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 func (cfg *apiConfig) handlerResetHits(w http.ResponseWriter, r *http.Request) {
@@ -38,56 +39,53 @@ func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
 
 	err := decoder.Decode(&input)
 	if err != nil {
-		errorResponse := errorResponse{
-			Error: "something went wrong",
-		}
-
-		data, err := json.Marshal(errorResponse)
-		if err != nil {
-			fmt.Errorf(err.Error())
-		}
-
-		w.WriteHeader(500)
-		w.Write(data)
+		respondWithError(w, http.StatusInternalServerError, "something went wrong")
 		return
 	}
 
 	if len(input.Body) > 140 {
-		errorResponse := errorResponse{
-			Error: "chirp is too long",
-		}
-
-		data, err := json.Marshal(errorResponse)
-		if err != nil {
-			fmt.Errorf(err.Error())
-		}
-
-		w.WriteHeader(400)
-		w.Write(data)
+		respondWithError(w, http.StatusBadRequest, "chirp is too long")
 		return
 	}
 
-	validResponse := validResponse{
-		Value: true,
-	}
+	checkProfanity(&input)
 
-	data, err := json.Marshal(validResponse)
-	if err != nil {
-		fmt.Errorf(err.Error())
-	}
-
-	w.WriteHeader(200)
-	w.Write(data)
+	respondWithJSON(w, http.StatusOK, map[string]string{"cleaned_body": input.Body})
 }
 
 type chirpRequest struct {
 	Body string `json:"body"`
 }
 
-type errorResponse struct {
-	Error string `json:"error"`
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	w.WriteHeader(code)
+	data, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		fmt.Errorf(err.Error())
+	}
+	w.Write(data)
 }
 
-type validResponse struct {
-	Value bool `json:"valid"`
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	w.WriteHeader(code)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Errorf(err.Error())
+	}
+	w.Write(data)
+}
+
+func checkProfanity(input *chirpRequest) {
+	profanity := []string{"kerfuffle", "sharbert", "fornax"}
+	for _, word := range profanity {
+		loweredBody := strings.ToLower(input.Body)
+		loweredWord := strings.ToLower(word)
+
+		if strings.Contains(loweredBody, loweredWord) {
+			startIndex := strings.Index(loweredBody, loweredWord)
+			endIndex := startIndex + len(word)
+
+			input.Body = input.Body[:startIndex] + "****" + input.Body[endIndex:]
+		}
+	}
 }
